@@ -3,6 +3,7 @@ Contents:
 * [Features](#features)
 * [Settings](#settings)
 * [Compatibility](#compatibility)
+* [Known bugs](#known-bugs)
 
 # Features
 This auto splitter offers:
