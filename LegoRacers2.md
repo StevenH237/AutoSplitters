@@ -1,3 +1,5 @@
+Download the splitter [here](https://raw.githubusercontent.com/ShadowFoxNixill/AutoSplitters/master/LegoRacers2.asl)!
+
 Contents:
 
 * [Features](#features)
