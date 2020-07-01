@@ -72,15 +72,11 @@ start {
 split {
     // At the end of the race:
     if (current.currentLap == old.currentLap + 1 && current.currentLap == current.numberOfLaps + 1) {
-        if (settings["racettime"]) {
-            if (current.currentPosition == 1 || settings["deadattempt"]) vars.gameTime += old.globalTimer;
-        }
         if (current.currentPosition == 1) return settings["race"];
     }
 
     // At the end of the minigame:
     if (current.thingsCollected == old.thingsCollected + 1 && current.thingsCollected == current.thingsToCollect) {
-        if (settings["minigametime"]) vars.gameTime += current.minigameTimeLimit - current.minigameTimer;
         return settings["minigame"];
     }
 
@@ -115,6 +111,14 @@ gameTime {
                     vars.gameTime += old.minigameTimeLimit - old.minigameTimer;
             }
         }
+
+        // Finished a race
+        if (settings["racetime"] && current.currentLap == old.currentLap + 1 && current.currentLap == current.numberOfLaps + 1 && (current.currentPosition == 1 || settings["deadattempt"]))
+            vars.gameTime += old.globalTimer;
+
+        // Finished a minigame
+        if (settings["minigametime"] && current.thingsCollected == old.thingsCollected + 1 && current.thingsCollected == current.thingsToCollect)
+            vars.gameTime += current.minigameTimeLimit - current.minigameTimer;
 
         float gTime = vars.gameTime;
 
