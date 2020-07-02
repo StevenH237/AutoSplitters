@@ -6,6 +6,7 @@ Contents:
 * [Settings](#settings)
 * [Compatibility](#compatibility)
 * [Known bugs](#known-bugs)
+* [Credits](#credits)
 
 # Features
 This auto splitter offers:
@@ -76,3 +77,6 @@ Lego Racers 2 is a 2001 CD-ROM game that is not receiving updates. This auto spl
 
 # Known bugs
 When using just races and minigames as the in-game time, a race doesn't count until the player crosses the starting line. However, the time it took to cross the finish line is still counted.
+
+# Credits
+[Torak](https://www.speedrun.com/user/Torak) found the pointer to the loading screens.
