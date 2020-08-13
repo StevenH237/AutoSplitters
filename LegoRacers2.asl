@@ -9,7 +9,7 @@
  *
  * The "isMapLoaded" variable was found by Torak.
  */
-
+ 
 state("LEGO Racers 2") {
     // Load screens are used for the auto-starter, which is disabled by default.
     // Torak actually found this one! That's about all the work that was already done for me tho.
@@ -39,13 +39,11 @@ startup {
     settings.Add("readmelink", false, "https://github.nixill.net/AutoSplitters/blob/master/LegoRacers2.md", "readme");
     settings.Add("readmedisclaimer", false, "(The above checkboxes don't do anything. You don't have to click them to run the splitter.)", "readme");
     settings.Add("autostart", false, "Start the timer whenever the Sandy Bay overworld loads. (Beware of false positives!)");
-    settings.Add("autostartanywhere", false, "Also allow any foyer to start the timer. Useful for NG+.", "autostart");
+    settings.Add("autostartanyfoyer", false, "Also allow any foyer to start the timer. Useful for NG+.", "autostart");
+    settings.Add("autostartanywhere", false, "Allow any map at all to start the timer. Useful if the above options fail, but causes drastic false positives.", "autostart");
     settings.Add("race", true, "Split the timer whenever the player wins a race.");
     settings.Add("minigame", true, "Split the timer whenever a minigame finishes.");
-    settings.Add("parttime", false, "In-game timers: Use race and minigame timers instead of all global timers.");
-    settings.Add("racetime", true, "Use race times as part of in-game times.", "parttime");
-    settings.Add("minigametime", true, "Use minigame times as part of in-game times.", "parttime");
-    settings.Add("deadattempt", true, "Include dead attempts (restarted or quit) as part of in-game times.", "parttime");
+    settings.Add("parttime", false, "In-game timers: Use race and minigame timers (all displayed timers) instead of all global timers.");
 
     vars.startTime = null;
     vars.gameTime = 0;
@@ -54,31 +52,32 @@ startup {
 start {
     if (!settings["autostart"]) return false;
     if (current.isMapLoaded == 1 && old.isMapLoaded != 1 && (
-        // Check if we're loading the right map
-        // Should drastically reduce false positives
-        (current.whichMapLoaded >= 1472 && // Sandy Bay overworlds
-        current.whichMapLoaded <= 1476) ||
-        // Don't ask me what causes the range of valid IDs 
-        (settings["autostartanywhere"] && (
-            current.whichMapLoaded == 290 || // Dino Island foyer
-            current.whichMapLoaded == 277 || // Mars foyer
-            current.whichMapLoaded == 263 || // Arctic foyer
-            current.whichMapLoaded == 267 // Xalax foyer
-        ))
-    )) return true;
+        settings["autostartanywhere"] || (
+            // Check if we're loading the right map
+            // Should drastically reduce false positives
+            (current.whichMapLoaded >= 1472 && // Sandy Bay overworlds
+            current.whichMapLoaded <= 1476) ||
+            // Don't ask me what causes the ranges of valid IDs 
+            (settings["autostartanyfoyer"] && (
+                current.whichMapLoaded == 290 || // Dino Island foyer
+                current.whichMapLoaded == 277 || // Mars foyer
+                current.whichMapLoaded == 285 || // Mars foyer
+                current.whichMapLoaded == 263 || // Arctic foyer
+                current.whichMapLoaded == 267 // Xalax foyer
+        )))
+    )) {
+        current.gtBuffer = 0;
+        return true;
+    }
     return false;
 }
 
 split {
     // At the end of the race:
-    if (current.currentLap == old.currentLap + 1 && current.currentLap == current.numberOfLaps + 1) {
-        if (current.currentPosition == 1) return settings["race"];
-    }
+    if (current.racingState == 4) return settings["race"];
 
     // At the end of the minigame:
-    if (current.thingsCollected == old.thingsCollected + 1 && current.thingsCollected == current.thingsToCollect) {
-        return settings["minigame"];
-    }
+    if (current.minigameState == 4) return settings["minigame"];
 
     // Both failed
     return false;
@@ -86,51 +85,42 @@ split {
 
 isLoading {
     return true;
+    // return current.isMapLoaded != 1;
 }
 
 gameTime {
     if (settings["parttime"]) {
-        if (settings["deadattempt"]) {
-            if (settings["racetime"]) {
-                // Restarted a race:
-                if (current.currentLap == 0 && old.currentLap != null && old.currentLap > 0)
-                    vars.gameTime += old.globalTimer;
-
-                // Quit a race:
-                if (current.currentLap == null && old.currentLap != null && old.currentLap <= old.numberOfLaps)
-                    vars.gameTime += old.globalTimer;
-            }
-
-            if (settings["minigametime"]) {
-                // Restarted a minigame:
-                if (current.thingsToCollect <= 10 && current.thingsToCollect >= 1 && current.thingsCollected == 0 && current.minigameTimer > old.minigameTimer)
-                    vars.gameTime += old.minigameTimeLimit - old.minigameTimer;
-
-                // Quit a minigame:
-                if ((current.thingsToCollect > 10 || current.thingsToCollect < 1) && (old.thingsToCollect <= 10 && old.thingsToCollect >= 1 && old.thingsCollected < old.thingsToCollect))
-                    vars.gameTime += old.minigameTimeLimit - old.minigameTimer;
-            }
+        if (current.racingState == 1) {
+            // On starting a race, reset "currTimer".
+            current.currTimer = current.globalTimer;
+        } else if (current.racingState == 2) {
+            // During a race, make sure global timer never resets.
+            // If it does, ignore it and use last known time.
+            if (current.globalTimer < old.currTimer) current.currTimer = old.currTimer;
+            else current.currTimer = current.globalTimer;
+        } else if (current.racingState == 3 || current.racingState == 4) {
+            // On ending a race, add current time to cumulative time.
+            // If the global timer has already reset, use last known time.
+            // But if it hasn't, then it should be used instead.
+            if (current.globalTimer < old.currTimer) vars.gameTime += old.currTimer;
+            else vars.gameTime += current.globalTimer;
+            current.currTimer = 0;
+        } else if (current.minigameState == 1 || current.minigameState == 2 || current.minigameState == 5) {
+            // If we're not racing, we might be playing a minigame.
+            // On starting, in the middle of, or on restarting, a minigame:
+            // the current time is however much time we've taken out of the time limit.
+            current.currTimer = current.minigameTimeLimit - current.minigameTimer;
+        } else if (current.minigameState == 3 || current.minigameState == 4) {
+            // Otherwise, we should add the time taken out of the limit to the cumulative time.
+            vars.gameTime += current.minigameTimeLimit - current.minigameTimer;
+            current.currTimer = 0;
+        } else {
+            // If we're not racing or in a minigame, the current time is 0.
+            current.currTimer = 0;
         }
 
-        // Finished a race
-        if (settings["racetime"] && current.currentLap == old.currentLap + 1 && current.currentLap == current.numberOfLaps + 1 && (current.currentPosition == 1 || settings["deadattempt"]))
-            vars.gameTime += old.globalTimer;
-
-        // Finished a minigame
-        if (settings["minigametime"] && current.thingsCollected == old.thingsCollected + 1 && current.thingsCollected == current.thingsToCollect)
-            vars.gameTime += current.minigameTimeLimit - current.minigameTimer;
-
-        float gTime = vars.gameTime;
-
-        // In a race:
-        if (settings["racetime"] && current.currentLap != null && current.currentLap <= current.numberOfLaps && current.currentLap > 0)
-            gTime += current.globalTimer;
-
-        // In a minigame:
-        if (settings["minigametime"] && current.thingsToCollect <= 10 && current.thingsToCollect >= 1 && current.thingsCollected < current.thingsToCollect)
-            gTime += current.minigameTimeLimit - current.minigameTimer;
-
-        return TimeSpan.FromSeconds(gTime);
+        // The time to display is both the current timer and cumulative time, combined.
+        return TimeSpan.FromSeconds(vars.gameTime + current.currTimer);
     } else {
         // If the timer got reset or went away:
         if ((current.globalTimer == null && old.globalTimer != null) || (current.globalTimer < old.globalTimer))
@@ -141,8 +131,67 @@ gameTime {
 }
 
 update {
+    // Watch for a run restart, cause we need to clear game time vars
     if (timer.AttemptStarted.Time != null && (vars.startTime == null || vars.startTime < timer.AttemptStarted.Time)) {
         vars.startTime = timer.AttemptStarted.Time;
         vars.gameTime = 0;
+    }
+
+    // Get the current racing state
+    // 0 = not racing
+    // 1 = race started (one frame pulse)
+    // 2 = race in progress
+    // 3 = race ended (one frame pulse)
+    // 4 = race won (one frame pulse)
+    // we can use the "racing" var from last frame as a shortcut
+    if (current.currentLap >= 1 && current.currentLap <= current.numberOfLaps && current.currentLap <= 5) {
+        current.racing = 1;
+        if (old.racing == 1) {
+            current.racingState = 2;
+        } else {
+            current.racingState = 1;
+        }
+    } else {
+        current.racing = 0;
+        if (old.racing == 1) {
+            if (current.currentLap == current.numberOfLaps + 1 && current.currentPosition == 1) {
+                current.racingState = 4;
+            } else {
+                current.racingState = 3;
+            }
+        } else {
+            current.racingState = 0;
+        }
+    }
+
+    // Get the current minigame state
+    // 0 = no minigame
+    // 1 = minigame started (one frame pulse)
+    // 2 = minigame in progress
+    // 3 = minigame ended (one frame pulse)
+    // 4 = minigame won (one frame pulse)
+    // 5 = minigame restarted (one frame pulse)
+    if (current.thingsToCollect <= 10 && current.thingsToCollect >= 1 && current.thingsCollected < current.thingsToCollect) {
+        current.minigaming = 1;
+        if (old.minigaming == 1) {
+            if (current.minigameTimer > old.minigameTimer) {
+                current.minigameState = 5;
+            } else {
+                current.minigameState = 2;
+            }
+        } else {
+            current.minigameState = 1;
+        }
+    } else {
+        current.minigaming = 0;
+        if (old.minigaming == 1) {
+            if (current.thingsCollected == current.thingsToCollect) {
+                current.minigameState = 4;
+            } else {
+                current.minigameState = 3;
+            }
+        } else {
+            current.minigameState = 0;
+        }
     }
 }
